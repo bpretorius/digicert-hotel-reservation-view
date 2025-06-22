@@ -1,4 +1,4 @@
-# DigiCert Hotel Reservation View
+# Hotel Reservation View
 
 ## Perform the following to run the application
 
