@@ -14,7 +14,9 @@ export default function Callback() {
       })
       .catch(err => {
         console.error('Callback error:', err);
-        navigate('/error');
+        //userManager.signoutRedirect();
+        //userManager.signinRedirect();
+        navigate('/');
       });
   }, [navigate]);
 

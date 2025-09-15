@@ -12,12 +12,13 @@ export const UserInfo = () => {
   if (!user) return <p>Not logged in</p>;
 
   const roles = user.profile.roles || user.profile.role;
+  const aud = user.profile.aud;
 
   return (
     <div>
       <p><strong>Username:</strong> {user.profile.sub}</p>
       <p><strong>Name:</strong> {user.profile.name}</p>
-      <p><strong>Aud:</strong> {user.profile.aud}</p>
+      <p><strong>Aud:</strong> {Array.isArray(aud) ? aud.join(', ') : aud}</p>
       <p><strong>Roles:</strong> {Array.isArray(roles) ? roles.join(', ') : roles}</p>
     </div>
   );
