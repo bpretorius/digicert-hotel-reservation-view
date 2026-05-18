@@ -30,7 +30,13 @@ export const Logout = () => {
   if (!isAuthenticated) return null;
 
   return (
-    <Button onClick={() => userManager.signoutRedirect()}>
+    <Button
+      variant="outlined"
+      color="error"
+      size="large"
+      onClick={() => userManager.signoutRedirect()}
+      sx={{ borderRadius: 2, px: 3, textTransform: 'none', fontWeight: 700 }}
+    >
       Logout
     </Button>
   );

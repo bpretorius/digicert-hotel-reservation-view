@@ -3,6 +3,12 @@ import Button from '@mui/material/Button';
 import DataTable from '../common/DataTable/DataTable';
 import moment from 'moment';
 import Container from '@mui/material/Container';
+import Box from '@mui/material/Box';
+import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
+import Paper from '@mui/material/Paper';
+import Alert from '@mui/material/Alert';
+import AlertTitle from '@mui/material/AlertTitle';
 import NewReservationModal from '../Modals/NewReservationModal';
 import EditReservationModal from '../Modals/EditReservationModal';
 import AlertDialog from '../common/AlertDialog/AlertDialog';
@@ -23,6 +29,83 @@ const ReservationTable = ({ onError }) => {
     const [alertDialogOpen, setAlertDialogOpen] = useState(false);   
     const [reservations, setReservations] = useState([]);
     const [isAuthenticated, setIsAuthenticated] = useState(false); // ← Added
+    const [backendError, setBackendError] = useState('');
+
+    const [canUpdateReservation, setCanUpdateReservation] = useState(false);
+    const [canDeleteReservation, setCanDeleteReservation] = useState(false);
+
+    const UPDATE_RESERVATION_PERMISSIONS = [
+        'update:hotel_reservation',
+        'ROLE_ADMIN'
+    ];
+
+    const DELETE_RESERVATION_PERMISSIONS = [
+        'delete:hotel_reservation',
+        'ROLE_ADMIN'
+    ];
+
+    const extractUserClaims = (profile) => {
+        const claimBuckets = [
+            profile?.permission,
+            profile?.permissions,
+            profile?.scope,
+            profile?.scp,
+            profile?.roles,
+            profile?.role,
+            profile?.authorities,
+            profile?.authority
+        ];
+
+        return claimBuckets
+            .flatMap((value) => {
+                if (!value) return [];
+                if (Array.isArray(value)) return value;
+                if (typeof value === 'string') return value.split(' ');
+                return [];
+            })
+            .map((value) => String(value).trim())
+            .filter(Boolean);
+    };
+
+    const hasAnyPermission = (userClaims, acceptedPermissions) => {
+        const normalizedClaims = new Set(userClaims.map((claim) => claim.toLowerCase()));
+        return acceptedPermissions.some((permission) => normalizedClaims.has(permission.toLowerCase()));
+    };
+
+    const clearBackendError = () => {
+        setBackendError('');
+    };
+
+    const showBackendError = (message) => {
+        setBackendError(message);
+        if (onError) onError(message);
+    };
+
+    const buildBackendErrorMessage = async (response, fallbackMessage) => {
+        const statusText = response.statusText ? ` ${response.statusText}` : '';
+        let details = '';
+
+        try {
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                const payload = await response.json();
+                details = payload?.message
+                    || payload?.error
+                    || (Array.isArray(payload?.errors) ? payload.errors.join(', ') : '')
+                    || '';
+            } else {
+                details = (await response.text()).trim();
+            }
+        } catch (error) {
+            // Keep fallback when response body cannot be parsed.
+        }
+
+        if (details) {
+            return `${fallbackMessage} (${response.status}${statusText}): ${details}`;
+        }
+
+        return `${fallbackMessage} (${response.status}${statusText}).`;
+    };
 
     const columns = [
         { field: 'hotel_name', headerName: 'Hotel Name', width: 150, valueGetter: params => params.row.hotel.name },
@@ -30,12 +113,27 @@ const ReservationTable = ({ onError }) => {
         { field: 'reservationReference',headerName: 'Reservation Reference', width: 200 },
         { field: 'fromDate', headerName: 'From Date', width: 150, valueFormatter: params => moment(params?.value).format('YYYY-MM-DD') },
         { field: 'toDate', headerName: 'To Date', width: 150, valueFormatter: params => moment(params?.value).format('YYYY-MM-DD') },
-        { field: 'edit', headerName: '', sortable: false, renderCell: (params) => (
-            <Button onClick={(e) => onRowEditButtonClick(e, params.row)}>Edit</Button>
-        ) },
-        { field: 'delete', headerName: '', sortable: false, renderCell: (params) => (
-            <Button onClick={(e) => onRowDeleteButtonClick(e, params.row)}>Delete</Button>
-        ) }
+        ...(canUpdateReservation ? [{ field: 'edit', headerName: '', sortable: false, renderCell: (params) => (
+            <Button
+                size="small"
+                variant="outlined"
+                sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700 }}
+                onClick={(e) => onRowEditButtonClick(e, params.row)}
+            >
+                Edit
+            </Button>
+        ) }] : []),
+        ...(canDeleteReservation ? [{ field: 'delete', headerName: '', sortable: false, renderCell: (params) => (
+            <Button
+                size="small"
+                color="error"
+                variant="outlined"
+                sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700 }}
+                onClick={(e) => onRowDeleteButtonClick(e, params.row)}
+            >
+                Delete
+            </Button>
+        ) }] : [])
     ];
 
     const reservationTableStyles = {
@@ -57,7 +155,18 @@ const ReservationTable = ({ onError }) => {
 
     const checkAuth = async () => {
         const user = await userManager.getUser();
-        setIsAuthenticated(!!user && !user.expired);
+        const authenticated = !!user && !user.expired;
+        setIsAuthenticated(authenticated);
+
+        if (!authenticated) {
+            setCanUpdateReservation(false);
+            setCanDeleteReservation(false);
+            return;
+        }
+
+        const userClaims = extractUserClaims(user.profile);
+        setCanUpdateReservation(hasAnyPermission(userClaims, UPDATE_RESERVATION_PERMISSIONS));
+        setCanDeleteReservation(hasAnyPermission(userClaims, DELETE_RESERVATION_PERMISSIONS));
     };
 
     const getAccessToken = async () => {
@@ -72,10 +181,12 @@ const ReservationTable = ({ onError }) => {
 
     const getReservations = async () => {
         try {
+            clearBackendError();
             const user = await userManager.getUser();
             if (!user || user.expired) {
                 console.log('User not authenticated or token expired');
             //    await userManager.signinRedirect();
+                setReservations([]);
                 return [];
             }
 
@@ -87,19 +198,22 @@ const ReservationTable = ({ onError }) => {
             });
 
             if (!response.ok) {
-                throw new Error(`HTTP error ${response.status}`);
+                throw new Error(await buildBackendErrorMessage(response, 'Failed to load reservations'));
             }
 
             const data = await response.json();
             setReservations(data.reservations);
         } catch (error) {
             console.log('Failed to fetch reservations:', error);
+            showBackendError(error.message || 'Failed to load reservations.');
         }
     };
 
     const addReservation = async (reservation) => {
         const token = await getAccessToken();
-        if (!token) return;
+        if (!token) return false;
+
+        clearBackendError();
 
         const requestOptions = {
             method: 'POST',
@@ -111,16 +225,24 @@ const ReservationTable = ({ onError }) => {
         };
 
         try {
-            await fetch('http://localhost:8080/hotel/reservation', requestOptions);
+            const response = await fetch('http://localhost:8080/hotel/reservation', requestOptions);
+            if (!response.ok) {
+                throw new Error(await buildBackendErrorMessage(response, 'Failed to add reservation'));
+            }
             await getReservations();
+            return true;
         } catch (error) {
             console.error('Failed to add reservation:', error);
+            showBackendError(error.message || 'Failed to add reservation.');
+            return false;
         }
     };
 
     const updateReservation = async (reservation) => {
         const token = await getAccessToken();
-        if (!token) return;
+        if (!token) return false;
+
+        clearBackendError();
 
         const requestOptions = {
             method: 'PUT',
@@ -132,16 +254,24 @@ const ReservationTable = ({ onError }) => {
         };
 
         try {
-            await fetch('http://localhost:8080/hotel/reservation', requestOptions);
+            const response = await fetch('http://localhost:8080/hotel/reservation', requestOptions);
+            if (!response.ok) {
+                throw new Error(await buildBackendErrorMessage(response, 'Failed to update reservation'));
+            }
             await getReservations();
+            return true;
         } catch (error) {
             console.error('Failed to update reservation:', error);
+            showBackendError(error.message || 'Failed to update reservation.');
+            return false;
         }
     };
 
     const deleteReservation = async (id) => {
         const token = await getAccessToken();
         if (!token) return;
+
+        clearBackendError();
 
         const requestOptions = {
             method: 'DELETE',
@@ -151,10 +281,14 @@ const ReservationTable = ({ onError }) => {
         };
 
         try {
-            await fetch(`http://localhost:8080/hotel/reservation/${id}`, requestOptions);
+            const response = await fetch(`http://localhost:8080/hotel/reservation/${id}`, requestOptions);
+            if (!response.ok) {
+                throw new Error(await buildBackendErrorMessage(response, 'Failed to delete reservation'));
+            }
             await getReservations();
         } catch (error) {
             console.error('Failed to delete reservation:', error);
+            showBackendError(error.message || 'Failed to delete reservation.');
         }
 
         setAlertDialogOpen(false);
@@ -176,20 +310,60 @@ const ReservationTable = ({ onError }) => {
         };
 
         return (
-            <>
-                {isAuthenticated && (
-                    <Button 
-                        variant="contained"
-                        onClick={addReservation}
-                        size="large"
+            <Paper
+                elevation={0}
+                sx={{
+                    mb: 2,
+                    p: { xs: 2, md: 2.5 },
+                    borderRadius: 3,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    background: 'linear-gradient(135deg, #f7fafc 0%, #f3f6ff 100%)'
+                }}
+            >
+                <Stack spacing={2}>
+                    <Stack
+                        direction={{ xs: 'column', md: 'row' }}
+                        justifyContent="space-between"
+                        alignItems={{ xs: 'flex-start', md: 'center' }}
+                        spacing={1.5}
                     >
-                        New Reservation
-                    </Button>
-                )}
-                <Login />
-                <Logout />
-                <UserInfo />         
-            </>
+                        <Box>
+                            <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
+                                Hotel Reservations
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                Manage bookings and account access in one place.
+                            </Typography>
+                        </Box>
+
+                        {isAuthenticated && (
+                            <Button
+                                variant="contained"
+                                onClick={addReservation}
+                                size="large"
+                                sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, px: 3 }}
+                            >
+                                New Reservation
+                            </Button>
+                        )}
+                    </Stack>
+
+                    <Stack
+                        direction={{ xs: 'column', md: 'row' }}
+                        spacing={1.5}
+                        alignItems={{ xs: 'stretch', md: 'center' }}
+                        justifyContent="space-between"
+                    >
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                            <Login />
+                            <Logout />
+                        </Stack>
+
+                        <UserInfo />
+                    </Stack>
+                </Stack>
+            </Paper>
         );
     };
 
@@ -203,10 +377,10 @@ const ReservationTable = ({ onError }) => {
         setAlertDialogOpen(true);        
     };
 
-    const addNewReservation = (data) => {
+    const addNewReservation = async (data) => {
         const reservation = {
-            hotel: { id: 1, name: data.hotel_name },
-            customer: { id: 1, name: data.hotel_name },
+            hotel: { name: data.hotel_name },
+            customer: { name: data.customer_name },
             reservationReference: data.reservationReference,
             numberOfAdults: data.numberOfAdults,
             numberOfChildren: data.numberOfChildren,
@@ -214,15 +388,15 @@ const ReservationTable = ({ onError }) => {
             toDate: new Date(data.toDate).toISOString()
         };
 
-        addReservation(reservation);       
-        setOpen(false);
+        const isSaved = await addReservation(reservation);
+        if (isSaved) setOpen(false);
     };
 
-    const updateEditReservation = (data) => {
+    const updateEditReservation = async (data) => {
         const reservation = {
             id: data.id,
             hotel: { id: 1, name: data.hotel_name },
-            customer: { id: 1, name: data.hotel_name },
+            customer: { id: 1, name: data.customer_name },
             reservationReference: data.reservationReference,
             numberOfAdults: data.numberOfAdults,
             numberOfChildren: data.numberOfChildren,
@@ -230,13 +404,24 @@ const ReservationTable = ({ onError }) => {
             toDate: new Date(data.toDate).toISOString()
         };
 
-        updateReservation(reservation);       
-        setEditOpen(false);
+        const isUpdated = await updateReservation(reservation);
+        if (isUpdated) setEditOpen(false);
     };
 
     return (
         <Container maxWidth="lg">
             {getHeader()}
+
+            {backendError && (
+                <Alert
+                    severity="error"
+                    sx={{ mb: 2, borderRadius: 2 }}
+                    onClose={clearBackendError}
+                >
+                    <AlertTitle>Backend Request Failed</AlertTitle>
+                    {backendError}
+                </Alert>
+            )}
 
             <NewReservationModal
                 open={open}
