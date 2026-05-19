@@ -379,8 +379,8 @@ const ReservationTable = ({ onError }) => {
 
     const addNewReservation = async (data) => {
         const reservation = {
-            hotel: { name: data.hotel_name },
-            customer: { name: data.customer_name },
+            hotel: { id: 1, name: data.hotel_name },
+            customer: { id: 1, name: data.customer_name },
             reservationReference: data.reservationReference,
             numberOfAdults: data.numberOfAdults,
             numberOfChildren: data.numberOfChildren,
