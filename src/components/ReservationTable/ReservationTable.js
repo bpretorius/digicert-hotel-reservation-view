@@ -30,6 +30,7 @@ const ReservationTable = ({ onError }) => {
     const [reservations, setReservations] = useState([]);
     const [isAuthenticated, setIsAuthenticated] = useState(false); // ← Added
     const [backendError, setBackendError] = useState('');
+    const [tenantId, setTenantId] = useState('');
 
     const [canUpdateReservation, setCanUpdateReservation] = useState(false);
     const [canDeleteReservation, setCanDeleteReservation] = useState(false);
@@ -161,8 +162,13 @@ const ReservationTable = ({ onError }) => {
         if (!authenticated) {
             setCanUpdateReservation(false);
             setCanDeleteReservation(false);
+            setTenantId('');
             return;
         }
+
+        // Extract tenant ID from common claim names
+        const tenant = user.profile.tenant_id || user.profile.tenantId || user.profile.tid || user.profile.tenantid || '';
+        setTenantId(tenant);
 
         const userClaims = extractUserClaims(user.profile);
         setCanUpdateReservation(hasAnyPermission(userClaims, UPDATE_RESERVATION_PERMISSIONS));
@@ -334,6 +340,7 @@ const ReservationTable = ({ onError }) => {
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
                                 Manage bookings and account access in one place.
+                                {tenantId && ` • Tenant: ${tenantId}`}
                             </Typography>
                         </Box>
 

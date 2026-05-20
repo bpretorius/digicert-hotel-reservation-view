@@ -30,6 +30,10 @@ export const UserInfo = () => {
   const roleLabel = Array.isArray(roles) ? roles.join(', ') : (roles || 'N/A');
   const audienceLabel = Array.isArray(aud) ? aud.join(', ') : (aud || 'N/A');
 
+  // Extract tenant ID from common claim names
+  const tenantId = user.profile.tenant_id || user.profile.tenantId || user.profile.tid || user.profile.tenantid;
+  const tenantLabel = tenantId || 'N/A';
+
   return (
     <Paper
       elevation={0}
@@ -49,6 +53,7 @@ export const UserInfo = () => {
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 0.5 }}>
           <Chip size="small" label={`Roles: ${roleLabel}`} />
           <Chip size="small" label={`Aud: ${audienceLabel}`} />
+          {tenantId && <Chip size="small" label={`Tenant: ${tenantLabel}`} />}
         </Box>
       </Stack>
     </Paper>
