@@ -196,7 +196,7 @@ const ReservationTable = ({ onError }) => {
                 return [];
             }
 
-            const response = await fetch("http://localhost:8080/hotel/reservation/list", {
+            const response = await fetch("http://localhost:8081/hotel/reservation/list", {
                 headers: {
                     Authorization: `Bearer ${user.access_token}`,
                     'Content-Type': 'application/json',
@@ -231,7 +231,7 @@ const ReservationTable = ({ onError }) => {
         };
 
         try {
-            const response = await fetch('http://localhost:8080/hotel/reservation', requestOptions);
+            const response = await fetch('http://localhost:8081/hotel/reservation', requestOptions);
             if (!response.ok) {
                 throw new Error(await buildBackendErrorMessage(response, 'Failed to add reservation'));
             }
@@ -260,7 +260,7 @@ const ReservationTable = ({ onError }) => {
         };
 
         try {
-            const response = await fetch('http://localhost:8080/hotel/reservation', requestOptions);
+            const response = await fetch('http://localhost:8081/hotel/reservation', requestOptions);
             if (!response.ok) {
                 throw new Error(await buildBackendErrorMessage(response, 'Failed to update reservation'));
             }
@@ -287,7 +287,7 @@ const ReservationTable = ({ onError }) => {
         };
 
         try {
-            const response = await fetch(`http://localhost:8080/hotel/reservation/${id}`, requestOptions);
+            const response = await fetch(`http://localhost:8081/hotel/reservation/${id}`, requestOptions);
             if (!response.ok) {
                 throw new Error(await buildBackendErrorMessage(response, 'Failed to delete reservation'));
             }
