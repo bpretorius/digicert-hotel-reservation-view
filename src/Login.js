@@ -18,12 +18,14 @@ export const Login = () => {
 
     checkUser();
 
+    const onUserUnloaded = () => setIsAuthenticated(false);
+
     userManager.events.addUserLoaded(checkUser);
-    userManager.events.addUserUnloaded(() => setIsAuthenticated(false));
+    userManager.events.addUserUnloaded(onUserUnloaded);
 
     return () => {
       userManager.events.removeUserLoaded(checkUser);
-      userManager.events.removeUserUnloaded(() => setIsAuthenticated(false));
+      userManager.events.removeUserUnloaded(onUserUnloaded);
     };
   }, []);
 
@@ -31,7 +33,17 @@ export const Login = () => {
     setLoginError('');
 
     try {
-      await userManager.signinRedirect();
+      // Ensure previous auth artifacts do not short-circuit a fresh login.
+      await userManager.removeUser();
+      await userManager.clearStaleState();
+
+      await userManager.signinRedirect({
+        prompt: 'login',
+        max_age: 0,
+        extraQueryParams: {
+          prompt: 'login',
+        },
+      });
     } catch (error) {
       console.error('Signin redirect failed:', error);
       setLoginError(

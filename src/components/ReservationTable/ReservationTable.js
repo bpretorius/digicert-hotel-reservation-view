@@ -7,6 +7,7 @@ import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
+import Chip from '@mui/material/Chip';
 import Alert from '@mui/material/Alert';
 import AlertTitle from '@mui/material/AlertTitle';
 import NewReservationModal from '../Modals/NewReservationModal';
@@ -45,7 +46,39 @@ const ReservationTable = ({ onError }) => {
         'ROLE_ADMIN'
     ];
 
-    const extractUserClaims = (profile) => {
+    const decodeJwtPayload = (token) => {
+        if (!token) return {};
+
+        try {
+            const payload = token.split('.')[1];
+            if (!payload) return {};
+
+            const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+            const json = decodeURIComponent(
+                atob(normalized)
+                    .split('')
+                    .map((char) => `%${`00${char.charCodeAt(0).toString(16)}`.slice(-2)}`)
+                    .join('')
+            );
+
+            return JSON.parse(json);
+        } catch (error) {
+            return {};
+        }
+    };
+
+    const extractUserClaims = (profile, tokenClaims) => {
+        const realmRoles = [
+            ...(profile?.realm_access?.roles || []),
+            ...(tokenClaims?.realm_access?.roles || [])
+        ];
+        const resourceRoles = [
+            ...(Object.values(profile?.resource_access || {})
+            .flatMap((resource) => resource?.roles || [])),
+            ...(Object.values(tokenClaims?.resource_access || {})
+            .flatMap((resource) => resource?.roles || []))
+        ];
+
         const claimBuckets = [
             profile?.permission,
             profile?.permissions,
@@ -54,7 +87,17 @@ const ReservationTable = ({ onError }) => {
             profile?.roles,
             profile?.role,
             profile?.authorities,
-            profile?.authority
+            profile?.authority,
+            tokenClaims?.permission,
+            tokenClaims?.permissions,
+            tokenClaims?.scope,
+            tokenClaims?.scp,
+            tokenClaims?.roles,
+            tokenClaims?.role,
+            tokenClaims?.authorities,
+            tokenClaims?.authority,
+            realmRoles,
+            resourceRoles
         ];
 
         return claimBuckets
@@ -69,8 +112,21 @@ const ReservationTable = ({ onError }) => {
     };
 
     const hasAnyPermission = (userClaims, acceptedPermissions) => {
-        const normalizedClaims = new Set(userClaims.map((claim) => claim.toLowerCase()));
-        return acceptedPermissions.some((permission) => normalizedClaims.has(permission.toLowerCase()));
+        const normalize = (claim) => String(claim || '').trim().toLowerCase();
+        const stripPrefix = (claim) => normalize(claim).replace(/^scope_/, '').replace(/^role_/, '');
+
+        const normalizedClaims = new Set(userClaims.map((claim) => normalize(claim)));
+        const normalizedClaimBases = new Set(userClaims.map((claim) => stripPrefix(claim)));
+
+        return acceptedPermissions.some((permission) => {
+            const normalizedPermission = normalize(permission);
+            const normalizedPermissionBase = stripPrefix(permission);
+
+            return normalizedClaims.has(normalizedPermission)
+                || normalizedClaims.has(`scope_${normalizedPermission}`)
+                || normalizedClaims.has(`role_${normalizedPermission}`)
+                || normalizedClaimBases.has(normalizedPermissionBase);
+        });
     };
 
     const clearBackendError = () => {
@@ -142,15 +198,22 @@ const ReservationTable = ({ onError }) => {
     };
 
     useEffect(() => {
+        const onUserUnloaded = () => {
+            setIsAuthenticated(false);
+            setCanUpdateReservation(false);
+            setCanDeleteReservation(false);
+            setTenantId('');
+        };
+
         getReservations();
         checkAuth();
 
         userManager.events.addUserLoaded(checkAuth);
-        userManager.events.addUserUnloaded(() => setIsAuthenticated(false));
+        userManager.events.addUserUnloaded(onUserUnloaded);
 
         return () => {
             userManager.events.removeUserLoaded(checkAuth);
-            userManager.events.removeUserUnloaded(() => setIsAuthenticated(false));
+            userManager.events.removeUserUnloaded(onUserUnloaded);
         };
     }, []);
 
@@ -170,7 +233,8 @@ const ReservationTable = ({ onError }) => {
         const tenant = user.profile.tenant_id || user.profile.tenantId || user.profile.tid || user.profile.tenantid || '';
         setTenantId(tenant);
 
-        const userClaims = extractUserClaims(user.profile);
+        const tokenClaims = decodeJwtPayload(user.access_token);
+        const userClaims = extractUserClaims(user.profile, tokenClaims);
         setCanUpdateReservation(hasAnyPermission(userClaims, UPDATE_RESERVATION_PERMISSIONS));
         setCanDeleteReservation(hasAnyPermission(userClaims, DELETE_RESERVATION_PERMISSIONS));
     };
@@ -367,7 +431,25 @@ const ReservationTable = ({ onError }) => {
                             <Logout />
                         </Stack>
 
-                        <UserInfo />
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                            {isAuthenticated && (
+                                <>
+                                    <Chip
+                                        size="small"
+                                        color={canUpdateReservation ? 'success' : 'default'}
+                                        variant={canUpdateReservation ? 'filled' : 'outlined'}
+                                        label={`Can Edit: ${canUpdateReservation ? 'Yes' : 'No'}`}
+                                    />
+                                    <Chip
+                                        size="small"
+                                        color={canDeleteReservation ? 'success' : 'default'}
+                                        variant={canDeleteReservation ? 'filled' : 'outlined'}
+                                        label={`Can Delete: ${canDeleteReservation ? 'Yes' : 'No'}`}
+                                    />
+                                </>
+                            )}
+                            <UserInfo />
+                        </Stack>
                     </Stack>
                 </Stack>
             </Paper>
